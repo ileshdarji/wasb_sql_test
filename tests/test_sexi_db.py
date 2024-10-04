@@ -139,3 +139,51 @@ def test_invalid_unit_price(db_connection):
     cursor.execute("SELECT * FROM expense WHERE unit_price <= 0")
     result = cursor.fetchall()
     assert len(result) == 0, "Expected no invalid unit prices (<= 0) in expense data"
+
+
+# Test 8: Detect manager-employee cycles
+def test_manager_cycles(db_connection):
+    cursor = db_connection.cursor()
+
+    # Run the cycle detection query
+    cursor.execute("""
+    WITH RECURSIVE ManagerHierarchy (employee_id, manager_id, path) AS (
+        SELECT employee_id, manager_id, ARRAY[employee_id] AS path
+        FROM employee
+        WHERE manager_id IS NOT NULL
+
+        UNION ALL
+
+        SELECT e.employee_id, e.manager_id, mh.path || e.employee_id
+        FROM employee e
+        JOIN ManagerHierarchy mh ON e.manager_id = mh.employee_id
+        WHERE NOT contains(mh.path, e.employee_id)
+    )
+    SELECT DISTINCT employee_id, array_join(path, ', ') AS cycle
+    FROM ManagerHierarchy
+    WHERE contains(path, employee_id)
+    AND CARDINALITY(path) > 1
+    """)
+
+    result = cursor.fetchall()
+    # print(f"Results: {result}")
+
+    # Expected cycles based on the query results
+    expected_cycles = [
+        [7, '1, 4, 7'],
+        [4, '1, 4'],
+        [9, '3, 5, 9'],
+        [10, '3, 6, 10'],
+        [6, '3, 6'],
+        [10, '6, 10'],
+        [5, '3, 5'],
+        [7, '4, 7'],
+        [8, '1, 8'],
+        [9, '5, 9']
+    ]
+
+    assert len(result) == len(expected_cycles), f"Expected {len(expected_cycles)} cycles, but found {len(result)}"
+
+    # Compare expected and actual results by normalizing them to the same format
+    for cycle in expected_cycles:
+        assert cycle in result, f"Expected cycle {cycle}, but it wasn't found in {result}"
