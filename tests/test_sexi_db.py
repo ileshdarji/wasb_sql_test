@@ -187,3 +187,50 @@ def test_manager_cycles(db_connection):
     # Compare expected and actual results by normalizing them to the same format
     for cycle in expected_cycles:
         assert cycle in result, f"Expected cycle {cycle}, but it wasn't found in {result}"
+
+# Test 9: Generate supplier payment plans
+def test_supplier_payment_plans(db_connection):
+    cursor = db_connection.cursor()
+
+    # Run the query to generate supplier payment plans
+    cursor.execute("""
+        WITH InvoicePlan AS (
+            SELECT
+                i.supplier_id,
+                s.name AS supplier_name,
+                i.invoice_amount,
+                i.due_date,
+                DATE_TRUNC('month', i.due_date) AS payment_month
+            FROM invoice i
+            JOIN supplier s ON i.supplier_id = s.supplier_id
+        ),
+        MonthlyPayments AS (
+            SELECT
+                supplier_id,
+                supplier_name,
+                invoice_amount AS payment_amount,
+                invoice_amount AS balance_outstanding,
+                payment_month AS payment_date
+            FROM InvoicePlan
+        )
+        SELECT
+            supplier_id,
+            supplier_name,
+            payment_amount,
+            balance_outstanding,
+            payment_date
+        FROM MonthlyPayments
+        ORDER BY supplier_id, payment_date
+    """)  # Remove the semicolon at the end
+
+    result = cursor.fetchall()
+    # print(f"Supplier Payment Plans result: {result}")
+
+    # Example: Check if the correct number of payment plans is generated
+    assert len(result) == 6, f"Expected 6 payment plans, but got {len(result)}"
+
+    # Example: Validate that one of the payment plans has the expected amount
+    for row in result:
+        supplier_id, supplier_name, payment_amount, balance_outstanding, payment_date = row
+        if supplier_id == 1:
+            assert payment_amount == 6000.00, f"Expected payment amount of 6000.00 for supplier 1, but got {payment_amount}"
